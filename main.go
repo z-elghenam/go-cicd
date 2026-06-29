@@ -1,81 +1,78 @@
 package main
 
 import (
-        "log"
-        "net/http"
-        "os"
-        "time"
+	"database/sql"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"strconv"
+	"time"
 
-        "github.com/bootdotdev/learn-cicd-starter/internal/database"
-        "github.com/go-chi/chi/v5"
-        "github.com/go-chi/chi/v5/middleware"
-        "github.com/joho/godotenv"
-        _ "github.com/tursodatabase/libsql-client-go/libsql"
+	"github.com/bootdotdev/learn-cicd-starter/internal/database"
+	"github.com/go-chi/chi/v5"
+	"github.com/joho/godotenv"
+	_ "github.com/tursodatabase/libsql-client-go/libsql"
 )
 
 type apiConfig struct {
-        DB *database.Queries
+	DB *database.Queries
 }
 
 func main() {
-        if err := godotenv.Load(); err != nil {
-                log.Println("warning: assuming default configuration. .env unreadable:", err)
-        }
+	if err := godotenv.Load(".env"); err != nil {
+		log.Printf("warning: assuming default configuration. .env unreadable: %v", err)
+	}
 
-        port := os.Getenv("PORT")
-        if port == "" {
-                log.Fatal("PORT environment variable is not set")
-        }
+	port := os.Getenv("PORT")
+	if port == "" {
+		log.Fatal("PORT environment variable is not set")
+	}
+	portInt, err := strconv.Atoi(port)
+	if err != nil {
+		log.Fatal("invalid PORT environment variable: ", err)
+	}
 
-        dbURL := os.Getenv("DATABASE_URL")
-        if dbURL == "" {
-                log.Println("warning: DATABASE_URL not set, using in-memory database")
-        }
+	apiCfg := apiConfig{}
 
-        db, err := database.NewDB(dbURL)
-        if err != nil {
-                log.Fatal("Failed to connect to database:", err)
-        }
-        dbQueries := database.New(db)
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		log.Println("DATABASE_URL environment variable is not set")
+		log.Println("Running without CRUD endpoints")
+	} else {
+		db, err := sql.Open("libsql", dbURL)
+		if err != nil {
+			log.Fatal(err)
+		}
+		dbQueries := database.New(db)
+		apiCfg.DB = dbQueries
+		log.Println("Connected to database!")
+	}
 
-        apiCfg := &apiConfig{
-                DB: dbQueries,
-        }
+	router := chi.NewRouter()
 
-        r := chi.NewRouter()
-        r.Use(middleware.Logger)
-        r.Use(middleware.Recoverer)
-        r.Use(middleware.Timeout(60 * time.Second))
+	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "./static/index.html")
+	})
 
-        fileServer := http.FileServer(http.Dir("./static"))
-        r.Handle("/static/*", http.StripPrefix("/static", fileServer))
+	v1Router := chi.NewRouter()
 
-        r.Get("/healthz", handlerReadiness)
+	if apiCfg.DB != nil {
+		v1Router.Post("/users", apiCfg.handlerUsersCreate)
+		v1Router.Get("/users", apiCfg.middlewareAuth(apiCfg.handlerUsersGet))
+		v1Router.Get("/notes", apiCfg.middlewareAuth(apiCfg.handlerNotesGet))
+		v1Router.Post("/notes", apiCfg.middlewareAuth(apiCfg.handlerNotesCreate))
+	}
 
-        r.Post("/api/users", apiCfg.handlerUsersCreate)
+	v1Router.Get("/healthz", handlerReadiness)
 
-        r.Group(func(r chi.Router) {
-                r.Use(apiCfg.middlewareAuth)
-                r.Get("/api/users", apiCfg.handlerUsersGet)
-                r.Get("/api/notes", apiCfg.handlerNotesGet)
-                r.Post("/api/notes", apiCfg.handlerNotesCreate)
-        })
+	router.Mount("/v1", v1Router)
+	srv := &http.Server{
+		Addr:              fmt.Sprintf(":%d", portInt),
+		Handler:           router,
+		ReadHeaderTimeout: 15 * time.Second,
+	}
 
-        r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-                http.ServeFile(w, r, "./static/index.html")
-        })
-
-        server := &http.Server{
-                Addr:              ":" + port,
-                Handler:           r,
-                ReadTimeout:       30 * time.Second,
-                WriteTimeout:      30 * time.Second,
-                IdleTimeout:       60 * time.Second,
-                ReadHeaderTimeout: 10 * time.Second,
-        }
-
-        log.Printf("Serving on port: %s\n", port)
-        if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-                log.Fatal("Server failed to start:", err)
-        }
+	log.Printf("Serving on port: %d\n", portInt)
+	log.Fatal(srv.ListenAndServe())
 }
