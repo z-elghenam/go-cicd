@@ -18,7 +18,6 @@ type apiConfig struct {
 }
 
 func main() {
-        // Load environment variables
         if err := godotenv.Load(); err != nil {
                 log.Println("warning: assuming default configuration. .env unreadable:", err)
         }
@@ -28,7 +27,6 @@ func main() {
                 log.Fatal("PORT environment variable is not set")
         }
 
-        // Initialize database
         dbURL := os.Getenv("DATABASE_URL")
         if dbURL == "" {
                 log.Println("warning: DATABASE_URL not set, using in-memory database")
@@ -44,25 +42,18 @@ func main() {
                 DB: dbQueries,
         }
 
-        // Set up router
         r := chi.NewRouter()
-
-        // Middleware
         r.Use(middleware.Logger)
         r.Use(middleware.Recoverer)
         r.Use(middleware.Timeout(60 * time.Second))
 
-        // Serve static files
         fileServer := http.FileServer(http.Dir("./static"))
         r.Handle("/static/*", http.StripPrefix("/static", fileServer))
 
-        // Health check
         r.Get("/healthz", handlerReadiness)
 
-        // API routes
         r.Post("/api/users", apiCfg.handlerUsersCreate)
 
-        // Authenticated routes
         r.Group(func(r chi.Router) {
                 r.Use(apiCfg.middlewareAuth)
                 r.Get("/api/users", apiCfg.handlerUsersGet)
@@ -70,12 +61,10 @@ func main() {
                 r.Post("/api/notes", apiCfg.handlerNotesCreate)
         })
 
-        // Serve HTML
         r.Get("/", func(w http.ResponseWriter, r *http.Request) {
                 http.ServeFile(w, r, "./static/index.html")
         })
 
-        // Start server
         server := &http.Server{
                 Addr:              ":" + port,
                 Handler:           r,
