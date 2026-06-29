@@ -8,7 +8,7 @@ import (
 func TestGetAPIKey_Valid(t *testing.T) {
 	headers := http.Header{}
 	headers.Set("Authorization", "ApiKey abc123")
-	
+
 	apiKey, err := GetAPIKey(headers)
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
@@ -20,7 +20,7 @@ func TestGetAPIKey_Valid(t *testing.T) {
 
 func TestGetAPIKey_NoAuthorizationHeader(t *testing.T) {
 	headers := http.Header{}
-	
+
 	apiKey, err := GetAPIKey(headers)
 	if err == nil {
 		t.Error("Expected error for missing Authorization header, got nil")
@@ -33,7 +33,7 @@ func TestGetAPIKey_NoAuthorizationHeader(t *testing.T) {
 func TestGetAPIKey_InvalidAuthFormat(t *testing.T) {
 	headers := http.Header{}
 	headers.Set("Authorization", "Bearer token123")
-	
+
 	apiKey, err := GetAPIKey(headers)
 	if err == nil {
 		t.Error("Expected error for invalid auth format, got nil")
@@ -46,7 +46,7 @@ func TestGetAPIKey_InvalidAuthFormat(t *testing.T) {
 func TestGetAPIKey_EmptyApiKey(t *testing.T) {
 	headers := http.Header{}
 	headers.Set("Authorization", "ApiKey ")
-	
+
 	apiKey, err := GetAPIKey(headers)
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
