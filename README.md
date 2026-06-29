@@ -1,4 +1,4 @@
-[![CI Status](https://github.com/pc-ubuntu/go-cicd/actions/workflows/ci.yml/badge.svg)](https://github.com/pc-ubuntu/go-cicd/actions/workflows/ci.yml)
+[![CI Status](https://github.com/z-elghenam/go-cicd/actions/workflows/ci.yml/badge.svg)](https://github.com/z-elghenam/go-cicd/actions/workflows/ci.yml)
 
 # learn-cicd-starter (Notely)
 
@@ -24,4 +24,4 @@ go build -o notely && ./notely
 
 You do *not* need to set up a database or any interactivity on the webpage yet. Instructions for that will come later in the course!
 pc-ubuntu's version of Boot.dev's Notely app.
-[![CI Status](https://github.com/pc-ubuntu/go-cicd/actions/workflows/ci.yml/badge.svg)](https://github.com/pc-ubuntu/go-cicd/actions/workflows/ci.yml)
+[![CI Status](https://github.com/z-elghenam/go-cicd/actions/workflows/ci.yml/badge.svg)](https://github.com/z-elghenam/go-cicd/actions/workflows/ci.yml)
