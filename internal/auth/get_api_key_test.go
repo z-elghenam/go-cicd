@@ -47,9 +47,10 @@ func TestGetAPIKey_EmptyApiKey(t *testing.T) {
 	headers := http.Header{}
 	headers.Set("Authorization", "ApiKey ")
 	
+	// This test will fail - expecting an error when there shouldn't be one
 	apiKey, err := GetAPIKey(headers)
-	if err != nil {
-		t.Errorf("Expected no error, got %v", err)
+	if err == nil {
+		t.Error("Expected error for empty API key, got nil")
 	}
 	if apiKey != "" {
 		t.Errorf("Expected empty apiKey, got '%s'", apiKey)
