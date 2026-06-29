@@ -2,7 +2,9 @@ package main
 
 import (
 	"database/sql"
+	"embed"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -18,6 +20,9 @@ import (
 type apiConfig struct {
 	DB *database.Queries
 }
+
+//go:embed static/*
+var staticFiles embed.FS
 
 func main() {
 	if err := godotenv.Load(".env"); err != nil {
@@ -52,7 +57,15 @@ func main() {
 	router := chi.NewRouter()
 
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "./static/index.html")
+		f, err := staticFiles.Open("static/index.html")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer f.Close()
+		if _, err := io.Copy(w, f); err != nil {
+			log.Printf("Error serving index.html: %v", err)
+		}
 	})
 
 	v1Router := chi.NewRouter()
