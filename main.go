@@ -1,98 +1,92 @@
 package main
 
 import (
-	"database/sql"
-	"embed"
-	"io"
-	"log"
-	"net/http"
-	"os"
+        "log"
+        "net/http"
+        "os"
+        "time"
 
-	"github.com/go-chi/chi"
-	"github.com/go-chi/cors"
-	"github.com/joho/godotenv"
-
-	"github.com/bootdotdev/learn-cicd-starter/internal/database"
-
-	_ "github.com/tursodatabase/libsql-client-go/libsql"
+        "github.com/bootdotdev/learn-cicd-starter/internal/database"
+        "github.com/go-chi/chi/v5"
+        "github.com/go-chi/chi/v5/middleware"
+        "github.com/joho/godotenv"
+        _ "github.com/tursodatabase/libsql-client-go/libsql"
 )
 
 type apiConfig struct {
-	DB *database.Queries
+        DB *database.Queries
 }
 
-//go:embed static/*
-var staticFiles embed.FS
-
 func main() {
-	err := godotenv.Load(".env")
-	if err != nil {
-		log.Printf("warning: assuming default configuration. .env unreadable: %v", err)
-	}
+        // Load environment variables
+        if err := godotenv.Load(); err != nil {
+                log.Println("warning: assuming default configuration. .env unreadable:", err)
+        }
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		log.Fatal("PORT environment variable is not set")
-	}
+        port := os.Getenv("PORT")
+        if port == "" {
+                log.Fatal("PORT environment variable is not set")
+        }
 
-	apiCfg := apiConfig{}
+        // Initialize database
+        dbURL := os.Getenv("DATABASE_URL")
+        if dbURL == "" {
+                log.Println("warning: DATABASE_URL not set, using in-memory database")
+        }
 
-	// https://github.com/libsql/libsql-client-go/#open-a-connection-to-sqld
-	// libsql://[your-database].turso.io?authToken=[your-auth-token]
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		log.Println("DATABASE_URL environment variable is not set")
-		log.Println("Running without CRUD endpoints")
-	} else {
-		db, err := sql.Open("libsql", dbURL)
-		if err != nil {
-			log.Fatal(err)
-		}
-		dbQueries := database.New(db)
-		apiCfg.DB = dbQueries
-		log.Println("Connected to database!")
-	}
+        db, err := database.NewDB(dbURL)
+        if err != nil {
+                log.Fatal("Failed to connect to database:", err)
+        }
+        dbQueries := database.New(db)
 
-	router := chi.NewRouter()
+        apiCfg := &apiConfig{
+                DB: dbQueries,
+        }
 
-	router.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"https://*", "http://*"},
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"*"},
-		ExposedHeaders:   []string{"Link"},
-		AllowCredentials: false,
-		MaxAge:           300,
-	}))
+        // Set up router
+        r := chi.NewRouter()
 
-	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		f, err := staticFiles.Open("static/index.html")
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		defer f.Close()
-		if _, err := io.Copy(w, f); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
-	})
+        // Middleware
+        r.Use(middleware.Logger)
+        r.Use(middleware.Recoverer)
+        r.Use(middleware.Timeout(60 * time.Second))
 
-	v1Router := chi.NewRouter()
+        // Serve static files
+        fileServer := http.FileServer(http.Dir("./static"))
+        r.Handle("/static/*", http.StripPrefix("/static", fileServer))
 
-	if apiCfg.DB != nil {
-		v1Router.Post("/users", apiCfg.handlerUsersCreate)
-		v1Router.Get("/users", apiCfg.middlewareAuth(apiCfg.handlerUsersGet))
-		v1Router.Get("/notes", apiCfg.middlewareAuth(apiCfg.handlerNotesGet))
-		v1Router.Post("/notes", apiCfg.middlewareAuth(apiCfg.handlerNotesCreate))
-	}
+        // Health check
+        r.Get("/healthz", handlerReadiness)
 
-	v1Router.Get("/healthz", handlerReadiness)
+        // API routes
+        r.Post("/api/users", apiCfg.handlerUsersCreate)
 
-	router.Mount("/v1", v1Router)
-	srv := &http.Server{
-		Addr:    ":" + port,
-		Handler: router,
-	}
+        // Authenticated routes
+        r.Group(func(r chi.Router) {
+                r.Use(apiCfg.middlewareAuth)
+                r.Get("/api/users", apiCfg.handlerUsersGet)
+                r.Get("/api/notes", apiCfg.handlerNotesGet)
+                r.Post("/api/notes", apiCfg.handlerNotesCreate)
+        })
 
-	log.Printf("Serving on port: %s\n", port)
-	log.Fatal(srv.ListenAndServe())
+        // Serve HTML
+        r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+                http.ServeFile(w, r, "./static/index.html")
+        })
+
+        // Start server
+        server := &http.Server{
+                Addr:              ":" + port,
+                Handler:           r,
+                ReadTimeout:       30 * time.Second,
+                WriteTimeout:      30 * time.Second,
+                IdleTimeout:       60 * time.Second,
+                ReadHeaderTimeout: 10 * time.Second,
+        }
+
+        log.Printf("Serving on port: %s\n", port)
+        if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+                log.Fatal("Server failed to start:", err)
+        }
 }
